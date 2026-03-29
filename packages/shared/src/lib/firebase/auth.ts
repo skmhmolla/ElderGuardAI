@@ -150,56 +150,63 @@ export const signInWithEmail = async (email: string, password: string) => {
 };
 
 export const signInWithGoogle = async (role: 'elder' | 'family') => {
-    const provider = new GoogleAuthProvider();
-    const result = await signInWithPopup(auth, provider);
-    const user = result.user;
+    try {
+        const provider = new GoogleAuthProvider();
+        const result = await signInWithPopup(auth, provider);
+        const user = result.user;
 
-    const userDocRef = doc(db, 'users', user.uid);
-    const userDoc = await getDoc(userDocRef);
+        const userDocRef = doc(db, 'users', user.uid);
+        const userDoc = await getDoc(userDocRef);
 
-    if (!userDoc.exists()) {
-        // New Google User - we need to know if it's elder or family to create the right doc structure
-        // This part is tricky with Google Auth as we don't have all the form fields.
-        // Usually we redirect to a "Complete Profile" page.
-        // For now, valid placeholders or minimal doc.
-        const baseData = {
-            uid: user.uid,
-            email: user.email || '',
-            fullName: user.displayName || '',
-            createdAt: serverTimestamp(),
-            lastActive: serverTimestamp(),
-            role: role
-        };
+        if (!userDoc.exists()) {
+            const baseData = {
+                uid: user.uid,
+                email: user.email || '',
+                fullName: user.displayName || '',
+                createdAt: serverTimestamp(),
+                lastActive: serverTimestamp(),
+                role: role
+            };
 
-        if (role === 'elder') {
-            await setDoc(userDocRef, {
-                ...baseData,
-                age: 0, // Placeholder
-                emergencyContact: '',
-                familyMembers: [],
-                connectionCode: Math.floor(100000 + Math.random() * 900000).toString(),
-                profileSetupComplete: false
-            });
+            if (role === 'elder') {
+                await setDoc(userDocRef, {
+                    ...baseData,
+                    age: 0,
+                    emergencyContact: '',
+                    familyMembers: [],
+                    connectionCode: Math.floor(100000 + Math.random() * 900000).toString(),
+                    profileSetupComplete: false
+                });
+            } else {
+                await setDoc(userDocRef, {
+                    ...baseData,
+                    phone: '',
+                    relationship: 'other',
+                    eldersConnected: []
+                });
+            }
         } else {
-            await setDoc(userDocRef, {
-                ...baseData,
-                phone: '',
-                relationship: 'other',
-                eldersConnected: []
+            await updateDoc(userDocRef, {
+                lastActive: serverTimestamp()
             });
         }
-    } else {
-        await updateDoc(userDocRef, {
-            lastActive: serverTimestamp()
-        });
-    }
 
-    return user;
+        return user;
+    } catch (error: any) {
+        console.error("🔥 [GOOGLE_SIGNIN_ERROR]:", {
+            code: error?.code,
+            message: error?.message,
+            stack: error?.stack,
+            customData: error?.customData
+        });
+        throw error;
+    }
 };
 
 // --- Sign Out ---
 
 export const signOut = async () => {
+    localStorage.removeItem('dev_bypass_auth');
     await firebaseSignOut(auth);
 };
 

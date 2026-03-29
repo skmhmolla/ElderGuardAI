@@ -2,6 +2,8 @@
 // ElderNest Auth Service - Server Entry Point
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+console.log('🏁 [AUTH] Server process entered');
+console.log('🏁 [AUTH] Server starting...');
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -123,8 +125,8 @@ async function startServer() {
     app.listen(PORT, () => {
       logger.info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       logger.info('🔐 ElderNest Auth Service Started');
-      logger.info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       logger.info(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
+      logger.info('🚀 SERVER IS READY AND LISTENING');
       logger.info(`🌐 Server: http://localhost:${PORT}`);
       logger.info(`❤️  Health: http://localhost:${PORT}/health`);
       logger.info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');

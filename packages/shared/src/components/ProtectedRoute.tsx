@@ -18,6 +18,24 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles,
     const location = useLocation();
 
     useEffect(() => {
+        // --- Developer Bypass Check ---
+        const bypass = localStorage.getItem('dev_bypass_auth') === 'true';
+        if (bypass) {
+            console.warn("🛠️ [DEV_BYPASS]: Authentication is currently bypassed.");
+            const mockUser = {
+                uid: 'dev-elder-123',
+                email: 'dev@example.com',
+                fullName: 'Dev Senior',
+                role: 'elder',
+                profileSetupComplete: true,
+                age: 75,
+                connectionCode: '123456'
+            };
+            setUser(mockUser);
+            setLoading(false);
+            return;
+        }
+
         const unsubscribe = onAuthStateChanged(async (firebaseUser) => {
             if (!firebaseUser) {
                 navigate('/auth/login', { replace: true, state: { from: location } });
@@ -55,7 +73,6 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles,
                 }
 
                 // If we are ON the setup page, but setup IS complete -> Redirect to Home
-                // This prevents users from getting stuck in setup loop or redoing it unnecessarily
                 if (location.pathname === '/auth/profile-setup' && userData.profileSetupComplete) {
                     navigate('/');
                     return;

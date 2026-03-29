@@ -8,7 +8,7 @@ import path from 'path';
 dotenv.config({ path: path.join(process.cwd(), '../../.env') });
 
 const projectId = process.env.FIREBASE_PROJECT_ID;
-const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n').replace(/['"]/g, '');
+const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/^["']|["']$/g, '').replace(/\\n/g, '\n').trim();
 const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
 
 if (!projectId || !privateKey || !clientEmail) {

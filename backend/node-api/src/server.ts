@@ -1,6 +1,4 @@
-/**
- * ElderNest AI - Server Entry Point
- */
+console.log('🏁 [API] Server process entered');
 
 import app from './app';
 import { config } from './config/env';
@@ -17,6 +15,7 @@ const server = app.listen(PORT, () => {
   logger.info(`📚 API Docs: http://localhost:${PORT}/api-docs`);
   logger.info(`🔧 Environment: ${config.env}`);
   logger.info(`📡 API Version: ${config.server.apiVersion}`);
+  logger.info('🚀 SERVER IS READY AND LISTENING');
   logger.info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 });
 

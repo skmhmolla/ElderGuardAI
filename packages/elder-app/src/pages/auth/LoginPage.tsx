@@ -293,6 +293,27 @@ const LoginPage = () => {
                             onError={(msg) => setError(msg)}
                         />
 
+                        {/* Developer Bypass (Only for testing) */}
+                        {import.meta.env.DEV && (
+                            <div className="mt-8 pt-6 border-t border-dashed border-gray-200">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        localStorage.setItem('dev_bypass_auth', 'true');
+                                        if (roleParam === 'family') navigate('/family');
+                                        else navigate('/dashboard');
+                                        window.location.reload();
+                                    }}
+                                    className="w-full py-2 px-4 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg text-sm font-medium transition-colors border border-gray-300"
+                                >
+                                    🛠️ Developer Quick Access (No Login Required)
+                                </button>
+                                <p className="text-[10px] text-gray-400 text-center mt-2 uppercase tracking-widest">
+                                    Dev Only • Bypasses Firebase Auth
+                                </p>
+                            </div>
+                        )}
+
                         {/* Sign Up Link */}
                         <p className="text-center text-gray-600 pt-2">
                             New to ElderNest?{' '}

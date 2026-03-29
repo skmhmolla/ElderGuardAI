@@ -16,8 +16,26 @@ logger = logging.getLogger(__name__)
 
 class IntruderDetector:
     def __init__(self):
-        # MediaPipe Pose for behavior analysis
-        self.pose_detector = mp.solutions.pose.Pose()
+        # MediaPipe Pose for behavior analysis - robust loading
+        pose_module = None
+        try:
+            pose_module = mp.solutions.pose
+        except Exception:
+            try:
+                import mediapipe.python.solutions.pose as p
+                pose_module = p
+            except Exception:
+                try:
+                    from mediapipe.solutions import pose as p
+                    pose_module = p
+                except Exception as e:
+                    logger.error(f"IntruderDetector: Failed to load MediaPipe Pose: {e}")
+
+        if pose_module:
+            self.pose_detector = pose_module.Pose()
+        else:
+            self.pose_detector = None
+            logger.error("IntruderDetector: MediaPipe Pose module NOT available.")
         
         # Thresholds
         self.FACE_MATCH_THRESHOLD = 0.6  # Lower = stricter
@@ -75,14 +93,15 @@ class IntruderDetector:
         # 3. Behavior Analysis (if unknown person)
         suspicious_behavior = False
         behavior_type = None
-        if unknown_faces_count > 0:
+        if unknown_faces_count > 0 and self.pose_detector:
             # Simple behavior check using Pose
             pose_results = self.pose_detector.process(image_rgb)
-            if pose_results.pose_landmarks:
+            if pose_results and pose_results.pose_landmarks:
                  # Check for "hands raised" or specific postures?
                  # For now, placeholder
                  pass 
-
+        elif unknown_faces_count > 0:
+             logger.debug("Skipping pose analysis for intruder (pose_detector not available)")
         # 4. Alert Logic
         intruder_detected = unknown_faces_count > 0
         alert_required = intruder_detected and (

@@ -580,7 +580,9 @@ export async function googleAuth(
 ): Promise<AuthResponse & { success: boolean; message?: string; isNewUser?: boolean }> {
     try {
         const auth = getFirebaseAuth();
+        logger.info(`🔍 [GOOGLE_AUTH] Verifying ID token (Length: ${idToken?.length || 0})...`);
         const decodedToken = await auth.verifyIdToken(idToken);
+        logger.info(`✅ [GOOGLE_AUTH] Token verified for: ${decodedToken.email}`);
 
         const { uid: googleUid, email, name, picture } = decodedToken;
 
@@ -681,8 +683,12 @@ export async function googleAuth(
             },
             ...tokens,
         };
-    } catch (error) {
-        logger.error('Google auth error', { error });
+    } catch (error: any) {
+        logger.error('Google auth error', { 
+            message: error?.message, 
+            stack: error?.stack,
+            code: error?.code
+        });
         return { success: false, message: 'Failed to authenticate with Google', user: {}, accessToken: '', refreshToken: '', expiresIn: 0 };
     }
 }
