@@ -22,6 +22,108 @@ type WeatherData = {
   icon: string;
 };
 
+const getWeatherSuggestions = (weather: WeatherData | null) => {
+  if (!weather) return [];
+  const c = weather.condition.toLowerCase();
+  
+  if (weather.temp >= 32) {
+    return [
+      "💧 Drink plenty of water",
+      "🧢 Wear cap or use umbrella",
+      "🏠 Avoid going outside during peak sun (12PM–3PM)",
+      "👕 Wear light cotton clothes",
+      "🧴 Use sunscreen",
+      "🍉 Eat fruits with high water content",
+    ];
+  }
+  if (c.includes("rain") || c.includes("drizzle") || c.includes("thunder")) {
+    return [
+      "☔ Carry an umbrella or raincoat",
+      "👟 Avoid slippery areas",
+      "🦠 Stay away from dirty water",
+      "🧥 Keep extra clothes if needed",
+      "🚶 Walk carefully on wet roads",
+      "📱 Protect your phone from water",
+    ];
+  }
+  if (c.includes("haze") || c.includes("mist") || c.includes("fog") || c.includes("smoke") || c.includes("dust")) {
+    return [
+      "😷 Wear a mask outdoors",
+      "🚫 Avoid heavy outdoor activity",
+      "🪟 Keep windows closed",
+      "💧 Stay hydrated",
+      "🌿 Use air purifier if possible",
+    ];
+  }
+  if (c.includes("snow") || weather.temp <= 15) {
+    return [
+      "🧥 Wear warm clothes",
+      "☕ Drink warm fluids",
+      "🛌 Keep yourself covered",
+      "🚿 Avoid very cold water",
+      "🧦 Wear socks indoors",
+    ];
+  }
+  return [
+    "🚶 Go for a walk",
+    "🌳 Enjoy fresh air",
+    "🧘 Do light exercise",
+    "📖 Spend time outdoors",
+  ];
+};
+
+const WeatherAnimations = ({ condition }: { condition?: string }) => {
+  if (!condition) return null;
+  const c = condition.toLowerCase();
+
+  return (
+    <div className="absolute -inset-4 z-0 overflow-hidden pointer-events-none rounded-3xl opacity-60 dark:opacity-40">
+      {c.includes("rain") || c.includes("drizzle") ? (
+        <div className="absolute inset-0 flex justify-around">
+           {[...Array(12)].map((_, i) => (
+             <div key={i} className="w-0.5 h-16 bg-blue-300 dark:bg-blue-400/50" style={{ 
+               animation: `fallRain ${0.6 + Math.random() * 0.4}s linear infinite`,
+               animationDelay: `${Math.random()}s`
+             }} />
+           ))}
+           <style>{`
+             @keyframes fallRain {
+               0% { transform: translateY(-100px); opacity: 0; }
+               20% { opacity: 0.8; }
+               80% { opacity: 0.8; }
+               100% { transform: translateY(300px); opacity: 0; }
+             }
+           `}</style>
+        </div>
+      ) : c.includes("clear") ? (
+        <div className="absolute -top-12 -right-12 w-40 h-40 bg-yellow-300/40 rounded-full blur-3xl animate-pulse" style={{ animationDuration: '4s' }} />
+      ) : c.includes("cloud") ? (
+        <div className="absolute top-0 w-[200%] flex justify-between opacity-30" style={{ animation: 'floatCloud 20s linear infinite alternate' }}>
+            <Cloud size={64} className="text-slate-400" />
+            <Cloud size={96} className="text-slate-300 ml-16 mt-8" />
+            <Cloud size={48} className="text-slate-200 ml-8 mt-2" />
+            <style>{`
+             @keyframes floatCloud {
+               0% { transform: translateX(-10%); }
+               100% { transform: translateX(10%); }
+             }
+           `}</style>
+        </div>
+      ) : c.includes("haze") || c.includes("mist") || c.includes("fog") || c.includes("dust") ? (
+        <div className="absolute inset-0 bg-gradient-to-t from-slate-300/50 to-transparent blur-xl" style={{ animation: 'fogFloat 8s ease-in-out infinite' }}>
+            <style>{`
+             @keyframes fogFloat {
+               0% { transform: translateX(-5%) translateY(0); opacity: 0.3; }
+               50% { transform: translateX(5%) translateY(-5%); opacity: 0.7; }
+               100% { transform: translateX(-5%) translateY(0); opacity: 0.3; }
+             }
+           `}</style>
+        </div>
+      ) : null}
+    </div>
+  );
+};
+
 export const WeatherWidget = () => {
   const [weather, setWeather] = useState<WeatherData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -173,8 +275,10 @@ export const WeatherWidget = () => {
   };
 
   return (
-    <div className="flex flex-col justify-between h-full space-y-3">
-      <div className="flex items-start justify-between">
+    <div className="flex flex-col justify-between h-full space-y-3 relative">
+      <WeatherAnimations condition={weather?.condition} />
+      
+      <div className="flex items-start justify-between relative z-10">
         <div>
           <div className="flex items-center gap-2 mb-1">
             <p className="text-sky-800 dark:text-sky-200 font-bold uppercase text-xs tracking-wider">
@@ -206,8 +310,21 @@ export const WeatherWidget = () => {
         </div>
       </div>
 
+      {/* Smart Suggestions */}
+      {!error && weather && (
+        <div className="relative z-10 flex-1 min-h-0 overflow-y-auto pr-1 animate-in fade-in slide-in-from-bottom-2 duration-700 scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-700">
+          <ul className="text-[11px] sm:text-[11.5px] space-y-1.5 text-slate-700 dark:text-slate-300 font-medium pb-1 leading-tight">
+            {getWeatherSuggestions(weather).map((suggestion, idx) => (
+              <li key={idx} className="flex items-start gap-1 leading-tight">
+                {suggestion}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {/* Manual Controls */}
-      <div className="pt-2 border-t border-sky-200 dark:border-sky-800/50">
+      <div className="pt-2 border-t border-sky-200 dark:border-sky-800/50 relative z-10 shrink-0">
         {!isManualMode ? (
           <button
             onClick={() => setIsManualMode(true)}
