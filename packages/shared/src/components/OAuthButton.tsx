@@ -21,8 +21,7 @@ const OAuthButton: React.FC<OAuthButtonProps> = ({ role, onSuccess, onError, tex
             onSuccess?.(user);
         } catch (error: any) {
             console.error(error);
-            // signInWithGoogle already throws Error with a friendly message
-            onError?.(error.message || 'Google sign-in failed. Please try again.');
+            onError?.(error.message || "Failed to sign in with Google.");
         } finally {
             setLoading(false);
         }

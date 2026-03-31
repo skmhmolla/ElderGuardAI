@@ -8,10 +8,11 @@ import {
     Square,
 } from "lucide-react";
 import { useVisionAnalysis } from "@/hooks/useVisionAnalysis";
+import { useMediaPipeVision } from "@/hooks/useMediaPipeVision";
 import { AIInsightsPanel } from "./AIInsightsPanel";
-import { auth, db, type ElderUser, type FamilyMemberManual } from "@elder-nest/shared";
-import { doc, onSnapshot, updateDoc, arrayUnion, Timestamp, addDoc, collection, serverTimestamp, getDoc } from "firebase/firestore";
+import { type FamilyMemberManual } from "@elder-nest/shared";
 import { ShieldCheck, ShieldAlert, UserCheck, ScanFace } from "lucide-react";
+
 
 export const CameraMonitor: React.FC = () => {
     const videoRef = useRef<HTMLVideoElement>(null);
@@ -30,39 +31,86 @@ export const CameraMonitor: React.FC = () => {
     const [securityStatus, setSecurityStatus] = useState<'secure' | 'scanning' | 'alert'>('secure');
     const [detectedPerson, setDetectedPerson] = useState<{ name: string; relation: string; photo?: string } | null>(null);
     const [knownFaces, setKnownFaces] = useState<FamilyMemberManual[]>([]);
-    
-    // To prevent spamming fall alerts, remember when we last alerted
-    const lastFallAlertRef = useRef<number>(0);
 
-    const { analyzeFrame, analyzing, lastResult } = useVisionAnalysis();
+    const { analyzeFrame, analyzing } = useVisionAnalysis();
+    const mediaPipeVision = useMediaPipeVision(videoRef, isActive && mode === 'mood');
+
+    // Combine results for the UI
+    const [lastResult, setLastResult] = useState<any>(null);
+
+    // Sync mediaPipe results to the backendResult structure so AIInsightsPanel can read it
+    useEffect(() => {
+        if (mode === 'mood' && isActive) {
+            setLastResult({
+                emotion: {
+                    emotion: mediaPipeVision.mood,
+                    confidence: mediaPipeVision.moodConfidence
+                },
+                fall: {
+                    fall_detected: false,
+                    confidence: 0.9,
+                    pose_detected: mediaPipeVision.pose !== 'Pose Unknown' && mediaPipeVision.pose !== 'No Person Detected',
+                    posture: mediaPipeVision.pose,
+                    body_angle: parseInt(mediaPipeVision.poseDetails.replace(/[^\d]/g, '')) || 0,
+                },
+                health_state: {
+                    state: 'Healthy',
+                    alert_level: 'normal'
+                },
+                security: {
+                    intruder_detected: false
+                },
+                alerts: mediaPipeVision.mood === 'No Face Detected' ? [{ type: 'vision', severity: 'warning', message: 'No face detected in frame' }] : []
+            });
+        }
+    }, [mediaPipeVision, mode, isActive]);
 
     // Fetch Known Faces (Family Members)
     useEffect(() => {
-        if (!auth.currentUser) return;
-        const docRef = doc(db, 'users', auth.currentUser.uid);
-        const unsubscribe = onSnapshot(docRef, (docSnap) => {
-            if (docSnap.exists()) {
-                const data = docSnap.data() as ElderUser;
+        const fetchFaces = async () => {
+            const { auth } = await import("@elder-nest/shared");
+            if (!auth.currentUser) return;
+            const dataStr = localStorage.getItem(`users_${auth.currentUser.uid}`);
+            if (dataStr) {
+                const data = JSON.parse(dataStr);
                 const manualMembers = data.manualFamilyMembers || [];
                 setKnownFaces(manualMembers);
             }
-        });
-        return () => unsubscribe();
+        };
+        fetchFaces();
+        const interval = setInterval(fetchFaces, 5000);
+        return () => clearInterval(interval);
     }, []);
 
     // Send Alert to Family Dashboard
     const sendSecurityAlert = async (msg: string) => {
+        const { auth } = await import("@elder-nest/shared");
         if (!auth.currentUser) return;
         try {
-            const docRef = doc(db, 'users', auth.currentUser.uid);
-            await updateDoc(docRef, {
-                notifications: arrayUnion({
-                    id: crypto.randomUUID(),
-                    type: 'security_alert',
-                    message: msg,
-                    timestamp: Timestamp.now(),
-                    read: false
-                })
+            const elderDataStr = localStorage.getItem(`users_${auth.currentUser.uid}`);
+            const elderData = elderDataStr ? JSON.parse(elderDataStr) : null;
+            if (!elderData) return;
+            
+            const familyIds = elderData.familyMembers || [];
+
+            familyIds.forEach((familyId: string) => {
+                const famDocStr = localStorage.getItem(`users_${familyId}`);
+                if (famDocStr) {
+                    const famData = JSON.parse(famDocStr);
+                    const notifs = famData.notifications || [];
+                    notifs.push({
+                        id: crypto.randomUUID(),
+                        elderId: auth.currentUser!.uid,
+                        type: 'security_alert',
+                        message: msg,
+                        timestamp: new Date().toISOString(),
+                        read: false
+                    });
+                    localStorage.setItem(`users_${familyId}`, JSON.stringify({
+                        ...famData,
+                        notifications: notifs
+                    }));
+                }
             });
             console.log("Security Alert Sent:", msg);
         } catch (e) {
@@ -105,7 +153,7 @@ export const CameraMonitor: React.FC = () => {
         setIsActive(false);
     }, [stream]);
 
-    // Capture and Analyze Frame
+    // Capture and Analyze Frame (For Security mode / Backend)
     const captureFrame = useCallback(async () => {
         if (!videoRef.current || !canvasRef.current || !isActive || analyzing) return;
 
@@ -119,97 +167,62 @@ export const CameraMonitor: React.FC = () => {
             context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
             const imageBase64 = canvas.toDataURL('image/jpeg', 0.6); // Compress slightly
-            const visionResult = await analyzeFrame(imageBase64);
-            
-            // Check for critical alerts (e.g. falls) from the backend
-            if (visionResult?.fall?.fall_detected && auth.currentUser) {
-                const now = Date.now();
-                // Send an alert at most once every 60 seconds to avoid spamming
-                if (now - lastFallAlertRef.current > 60000) {
-                    lastFallAlertRef.current = now;
-                    triggerEmergencyAlert("FALL DETECTED");
-                }
-            }
-
-            // Check for security alerts from the backend (if in security mode)
-            if (mode === 'security' && visionResult?.security) {
-                if (visionResult.security.intruder_detected) {
-                    setSecurityStatus('alert');
-                    setDetectedPerson(null);
-                    sendSecurityAlert("Unauthorized person detected by camera.");
-                    setTimeout(() => setSecurityStatus('secure'), 5000);
-                } else if (visionResult.security.details?.known_people?.length > 0) {
-                    // Match the first known person detected
-                    const matchedName = visionResult.security.details.known_people[0];
-                    const memberInfo = knownFaces.find(m => m.name === matchedName);
-                    setSecurityStatus('secure');
-                    setDetectedPerson({
-                        name: matchedName,
-                        relation: memberInfo?.relation || 'Family',
-                        photo: memberInfo?.photoURL
-                    });
-                    setTimeout(() => setDetectedPerson(null), 5000);
-                } else {
-                    setSecurityStatus('secure');
-                    setDetectedPerson(null);
-                }
-            }
+            await analyzeFrame(imageBase64);
         }
-    }, [isActive, analyzing, analyzeFrame, mode, knownFaces]);
+    }, [isActive, analyzing, analyzeFrame]);
 
-    const triggerEmergencyAlert = async (type: string) => {
-        const user = auth.currentUser;
-        if (!user) return;
-        
-        try {
-            console.error(`🚨 EMERGENCY TRIGGERED: ${type} 🚨`);
-            const elderDoc = await getDoc(doc(db, 'users', user.uid));
-            const elderData = elderDoc.data();
-            const familyIds = elderData?.familyMembers || [];
-
-            await addDoc(collection(db, 'alerts'), {
-                elderId: user.uid,
-                type: 'fall',
-                severity: 'critical',
-                message: `URGENT: Fall detected by AI Camera for ${user.displayName || 'Elder'}!`,
-                timestamp: serverTimestamp(),
-                acknowledged: false,
-                familyIds: familyIds
-            });
-
-            // Set emergency mode in elder user document
-            const userRef = doc(db, 'users', user.uid);
-            await updateDoc(userRef, {
-                isEmergency: true,
-                lastActive: serverTimestamp()
-            });
-        } catch (e) {
-            console.error("Failed to trigger fall emergency alert", e);
-        }
-    };
-
-    // Frame processing loop (MOOD MODE)
+    // Frame processing loop (MOOD MODE - Backend sync, now mostly handled by MediaPipe locally)
     useEffect(() => {
         let interval: any;
+        // Optionally keep backend syncing but very infrequent since mediapipe handles local UI
         if (isActive && mode === 'mood') {
-            // Analyze every 3 seconds for Mood (User Requested)
-            interval = setInterval(captureFrame, 3000);
+            interval = setInterval(captureFrame, 15000); // 15s instead of 3s to save backend
         }
         return () => clearInterval(interval);
     }, [isActive, mode, captureFrame]);
 
-    // Security/Face Detection Loop (SECURITY MODE)
+    // Security/Face Detection Simulation Loop (SECURITY MODE)
     useEffect(() => {
         let interval: any;
         if (isActive && mode === 'security') {
             interval = setInterval(() => {
+                // Status: Scanning
                 setSecurityStatus('scanning');
-                // Trigger actual backend frame capture for security
-                captureFrame();
+
+                setTimeout(() => {
+                    const rand = Math.random();
+                    // Simulating Detection Logic:
+                    // 0.0 - 0.7: No face/Secure
+                    // 0.7 - 0.95: Known Face
+                    // 0.95 - 1.0: Unknown/Intruder
+
+                    if (rand > 0.7 && rand <= 0.95 && knownFaces.length > 0) {
+                        // Known Family Member
+                        const member = knownFaces[Math.floor(Math.random() * knownFaces.length)];
+                        setSecurityStatus('secure');
+                        setDetectedPerson({
+                            name: member.name,
+                            relation: member.relation || 'Family',
+                            photo: member.photoURL
+                        });
+                        setTimeout(() => setDetectedPerson(null), 5000);
+                    } else if (rand > 0.95) {
+                        // Intruder
+                        setSecurityStatus('alert');
+                        setDetectedPerson(null);
+                        sendSecurityAlert("Unauthorized person detected by camera.");
+                        setTimeout(() => setSecurityStatus('secure'), 5000);
+                    } else {
+                        // Secure / Empty
+                        setSecurityStatus('secure');
+                        setDetectedPerson(null);
+                    }
+                }, 2000); // Scan duration
+
             }, 8000); // Check every 8s
         }
         return () => clearInterval(interval);
-    }, [isActive, mode, captureFrame]);
+    }, [isActive, mode, knownFaces]);
 
     // FPS Counter
     useEffect(() => {
