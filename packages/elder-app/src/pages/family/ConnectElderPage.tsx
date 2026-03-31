@@ -1,9 +1,8 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Check, ChevronRight, Hash, Heart } from 'lucide-react';
-import { auth, db } from '@elder-nest/shared';
-import { collection, query, where, getDocs, updateDoc, doc, arrayUnion } from 'firebase/firestore';
+import { ChevronRight, Hash, Heart } from 'lucide-react';
+
 
 export const ConnectElderPage = () => {
     const navigate = useNavigate();
@@ -21,63 +20,62 @@ export const ConnectElderPage = () => {
         setLoading(true);
 
         try {
-            // Find Elder by Code
-            const usersRef = collection(db, 'users');
-            // Remove 'role' from query to avoid Firestore composite index requirements
-            const q = query(usersRef, where('connectionCode', '==', code));
-            const querySnapshot = await getDocs(q);
+            const { auth } = await import('@elder-nest/shared');
+            const myId = auth.currentUser?.uid;
+            if (!myId) return;
 
-            if (querySnapshot.empty) {
-                setError('Invalid Family Code. Please check significantly.');
+            let elderId = null;
+            let elderData = null;
+
+            const trimmedCode = code.trim().toUpperCase();
+
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key && key.startsWith('users_')) {
+                    try {
+                        const data = JSON.parse(localStorage.getItem(key) || '{}');
+                        const dataCode = (data.connectionCode || '').trim().toUpperCase();
+                        
+                        if (data.role === 'elder' && dataCode === trimmedCode) {
+                            elderId = data.uid;
+                            elderData = data;
+                            break;
+                        }
+                    } catch (e) {
+                        console.error("Error parsing local user data", e);
+                    }
+                }
+            }
+
+            if (!elderId) {
+                setError('Invalid Family Code. Ensure you are using the same browser/profile for LocalStorage sync, and check the code.');
                 setLoading(false);
                 return;
             }
 
-            const elderDoc = querySnapshot.docs[0];
-            const elderId = elderDoc.id;
-            const elderData = elderDoc.data();
-            const myId = auth.currentUser?.uid;
-
-            if (!myId) return;
-
-            try {
-                // Update My Profile
-                const myRef = doc(db, 'users', myId);
-                await updateDoc(myRef, {
-                    eldersConnected: arrayUnion(elderId)
-                });
-
-                // Update Elder Profile
-                const elderRef = doc(db, 'users', elderId);
-                await updateDoc(elderRef, {
-                    familyMembers: arrayUnion(myId)
-                });
-            } catch (fireErr) {
-                console.warn("Firestore save failed, proceeding with local fallback...", fireErr);
-            }
-
-            // Always synchronously update localUserStore to guarantee the UI works even if offline
-            const { localUserStore } = await import('@elder-nest/shared');
-            const myLocalData = localUserStore.get(myId);
-            if (myLocalData) {
-                const existing = myLocalData.eldersConnected || [];
-                if (!existing.includes(elderId)) {
-                    localUserStore.update({ eldersConnected: [...existing, elderId] });
+            // Update My Profile
+            const myDataStr = localStorage.getItem(`users_${myId}`);
+            if (myDataStr) {
+                const myData = JSON.parse(myDataStr);
+                const eldersConnected = myData.eldersConnected || [];
+                if (!eldersConnected.includes(elderId)) {
+                    localStorage.setItem(`users_${myId}`, JSON.stringify({
+                        ...myData,
+                        eldersConnected: [...eldersConnected, elderId]
+                    }));
                 }
-            } else {
-                // Creates an active mock memory if fully missing
-                localUserStore.save({
-                     uid: myId,
-                     email: auth.currentUser?.email || '',
-                     fullName: auth.currentUser?.displayName || 'Family',
-                     role: 'family',
-                     createdAt: new Date().toISOString(),
-                     lastActive: new Date().toISOString(),
-                     eldersConnected: [elderId]
-                });
             }
 
-            alert(`Successfully connected to ${elderData.fullName || 'Elder'}!`);
+            // Update Elder Profile
+            const elderFam = elderData.familyMembers || [];
+            if (!elderFam.includes(myId)) {
+                localStorage.setItem(`users_${elderId}`, JSON.stringify({
+                    ...elderData,
+                    familyMembers: [...elderFam, myId]
+                }));
+            }
+
+            alert(`Successfully connected to ${elderData.fullName}!`);
             navigate('/family/profile'); // Go to Elder Profile View
 
         } catch (err) {
@@ -110,7 +108,7 @@ export const ConnectElderPage = () => {
                                 <input
                                     type="text"
                                     value={code}
-                                    onChange={(e) => setCode(e.target.value.toUpperCase())}
+                                    onChange={(e) => setCode(e.target.value.toUpperCase().trim())}
                                     placeholder="e.g. A1B2C3"
                                     className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-orange-500 outline-none font-mono text-lg uppercase tracking-widest"
                                     maxLength={8}

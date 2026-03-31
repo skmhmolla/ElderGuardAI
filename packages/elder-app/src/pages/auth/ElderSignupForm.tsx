@@ -9,7 +9,7 @@ import { z } from 'zod';
 import {
     OAuthButton,
     signUpElder,
-    elderSignupSchema,
+    elderSignupSchema
 } from '@elder-nest/shared';
 
 type ElderSignupFormData = z.infer<typeof elderSignupSchema>;
